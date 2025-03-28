@@ -53,7 +53,6 @@ def animate_moonwalk_across():
     Animate Michael Jackson moonwalking across the screen from left to right.
     The ASCII art is shifted by adding increasing left padding on each frame.
     """
-    # Two frames to simulate walking motion.
     frames = [
 r"""
            _O/                 
@@ -70,15 +69,11 @@ r"""
    ~ Michael Jackson Moonwalk ~
 """
     ]
-    # Determine the terminal width
     terminal_width = console.size.width
-    # We'll animate the art across the screen (loop until it has shifted completely off the right)
     total_shifts = terminal_width + 30  # extra padding so it fully disappears
     with Live(refresh_per_second=10, transient=True) as live:
         for offset in range(total_shifts):
-            # Alternate frames to simulate movement.
             frame = frames[offset % len(frames)]
-            # Add left padding equal to the offset.
             padded_frame = "\n".join(" " * offset + line for line in frame.splitlines())
             live.update(Text(padded_frame, style="bold magenta"))
             time.sleep(0.1)
@@ -88,28 +83,35 @@ r"""
 def parse_notes(file_path: Path):
     """
     Parse a text file for notes.
-    Each note starts with a header line "nab : <filename>"
-    and its content continues until the next header.
+    Each note starts with a header line "nab : <note_name>"
+    and its content continues until a line containing exactly "^^^"
+    which marks the end of the note.
+    Any text outside of a note block is ignored.
     """
     notes = {}
     current_note_name = None
     current_lines = []
-    pattern = re.compile(r'^nab\s*:\s*(.+)$', re.IGNORECASE)
+    note_started = False
+    header_pattern = re.compile(r'^nab\s*:\s*(.+)$', re.IGNORECASE)
     
     with file_path.open("r", encoding="utf-8") as f:
         for line in f:
             line = line.rstrip("\n")
-            match = pattern.match(line)
-            if match:
-                if current_note_name is not None:
-                    notes[current_note_name] = "\n".join(current_lines).strip()
-                current_note_name = match.group(1).strip()
-                current_lines = []
+            if not note_started:
+                match = header_pattern.match(line)
+                if match:
+                    current_note_name = match.group(1).strip()
+                    current_lines = []
+                    note_started = True
             else:
-                if current_note_name is not None:
+                if line.strip() == "^^^":
+                    if current_note_name is not None:
+                        notes[current_note_name] = "\n".join(current_lines).strip()
+                    note_started = False
+                    current_note_name = None
+                    current_lines = []
+                else:
                     current_lines.append(line)
-    if current_note_name is not None:
-        notes[current_note_name] = "\n".join(current_lines).strip()
     return notes
 
 def write_note(note_name: str, note_content: str, notes_dir: Path, backup_dir: Path):
