@@ -30,17 +30,31 @@ def animate_moonwalk_art():
     """
     frames = [
 r"""
-           _O/
+           (O*)
             /|
              |
-            / \
+          <    \
    ~ Michael Jackson Moonwalk ~
 """,
 r"""
-           \O_
-            /|
+           (*O)
+             |\
              |
-            / \
+          <    \
+   ~ Michael Jackson Moonwalk ~
+""",
+r"""
+           \O_*
+             |
+             |
+            /  >
+   ~ Michael Jackson Moonwalk ~
+""",
+r"""
+           *_O/
+             |
+             |
+            /  >
    ~ Michael Jackson Moonwalk ~
 """
     ]
