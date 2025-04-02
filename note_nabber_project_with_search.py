@@ -208,4 +208,308 @@ def list_files(directory: Path):
         return []
     files = sorted([f for f in directory.iterdir() if f.is_file()], key=lambda f: natural_sort_key(f.name))
     if not files:
-        console.print(f
+        console.print(f"[yellow]No files found in directory {directory}.[/yellow]")
+    else:
+        table = Table(title=f"Files in {directory}")
+        table.add_column("Index", style="cyan", justify="right")
+        table.add_column("Filename", style="magenta")
+        for i, f in enumerate(files, start=1):
+            table.add_row(str(i), f.name)
+        console.print(table)
+    return files
+
+def list_directories(directory: Path):
+    """List all subdirectories in a directory and display them in a table."""
+    if not directory.exists():
+        console.print(f"[red]Directory {directory} does not exist.[/red]")
+        return []
+    dirs = sorted([d for d in directory.iterdir() if d.is_dir()], key=lambda d: natural_sort_key(d.name))
+    if not dirs:
+        console.print(f"[yellow]No subdirectories found in {directory}.[/yellow]")
+    else:
+        table = Table(title=f"Directories in {directory}")
+        table.add_column("Index", style="cyan", justify="right")
+        table.add_column("Directory Name", style="magenta")
+        for i, d in enumerate(dirs, start=1):
+            table.add_row(str(i), d.name)
+        console.print(table)
+    return dirs
+
+def choose_file_from_list(files):
+    """Prompt the user to choose a single file from a list."""
+    if not files:
+        return None
+    files = sorted(files, key=lambda f: natural_sort_key(f.name))
+    if len(files) == 1:
+        return files[0]
+    table = Table(title="Select a File")
+    table.add_column("Index", style="cyan", justify="right")
+    table.add_column("Filename", style="magenta")
+    for i, f in enumerate(files, start=1):
+        table.add_row(str(i), f.name)
+    console.print(table)
+    while True:
+        choice = Prompt.ask("Enter the file number", default="1")
+        try:
+            index = int(choice)
+            if 1 <= index <= len(files):
+                return files[index - 1]
+            else:
+                console.print(f"[red]Invalid selection. Choose a number between 1 and {len(files)}.[/red]")
+        except ValueError:
+            console.print("[red]Please enter a valid number.[/red]")
+
+def choose_multiple_files_from_list(files):
+    """
+    Prompt the user to choose multiple files from a list.
+    Enter comma-separated numbers (e.g., "1,3,5").
+    Returns a list of selected files.
+    """
+    if not files:
+        return []
+    files = sorted(files, key=lambda f: natural_sort_key(f.name))
+    table = Table(title="Select Files (comma-separated indices)")
+    table.add_column("Index", style="cyan", justify="right")
+    table.add_column("Filename", style="magenta")
+    for i, f in enumerate(files, start=1):
+        table.add_row(str(i), f.name)
+    console.print(table)
+    
+    while True:
+        indices_input = Prompt.ask("Enter the file numbers (comma-separated)")
+        try:
+            indices = [int(x.strip()) for x in indices_input.split(",") if x.strip()]
+            if all(1 <= idx <= len(files) for idx in indices):
+                return [files[idx - 1] for idx in indices]
+            else:
+                console.print("[red]One or more numbers are out of range. Please try again.[/red]")
+        except ValueError:
+            console.print("[red]Please enter valid numbers separated by commas.[/red]")
+
+def view_file(filepath: Path):
+    """Display the content of a file."""
+    if not filepath.exists():
+        console.print(f"[red]File {filepath} does not exist.[/red]")
+        return
+    content = filepath.read_text(encoding="utf-8")
+    console.rule(f"[bold green]Content of {filepath.name}[/bold green]")
+    console.print(content)
+
+def create_file(directory: Path):
+    """Create a new file in a given directory."""
+    filename = Prompt.ask("Enter new file name (with extension, e.g. 'example.txt')")
+    filepath = directory / filename
+    if filepath.exists():
+        console.print(f"[red]File {filepath} already exists.[/red]")
+        return
+    content = Prompt.ask("Enter content for the new file (leave blank for empty)", default="")
+    filepath.write_text(content, encoding="utf-8")
+    console.print(f"[green]File {filepath} created successfully.[/green]")
+
+def edit_file(filepath: Path):
+    """Edit a file using an external editor (defaults to nano)."""
+    if not filepath.exists():
+        console.print(f"[red]File {filepath} does not exist.[/red]")
+        return
+    editor = os.environ.get("EDITOR", "nano")
+    console.print(f"Opening {filepath} in editor [bold]{editor}[/bold]...")
+    os.system(f"{editor} {filepath}")
+
+def delete_file(filepath: Path):
+    """Delete a file after user confirmation."""
+    if not filepath.exists():
+        console.print(f"[red]File {filepath} does not exist.[/red]")
+        return
+    confirm = Prompt.ask(f"Are you sure you want to delete {filepath.name}? (y/n)", choices=["y", "n"], default="n")
+    if confirm.lower() == "y":
+        filepath.unlink()
+        console.print(f"[green]File {filepath.name} deleted successfully.[/green]")
+    else:
+        console.print("[yellow]Deletion cancelled.[/yellow]")
+
+def move_file(filepath: Path, target_directory: Path):
+    """Move a single file to a target directory."""
+    if not filepath.exists():
+        console.print(f"[red]File {filepath} does not exist.[/red]")
+        return
+    if not target_directory.exists():
+        console.print(f"[red]Target directory {target_directory} does not exist.[/red]")
+        return
+    new_path = target_directory / filepath.name
+    shutil.move(str(filepath), str(new_path))
+    console.print(f"[green]File {filepath.name} moved to {target_directory} successfully.[/green]")
+
+def create_directory():
+    """Create a new directory by specifying a parent path and a new directory name."""
+    parent_input = Prompt.ask("Enter the parent directory path (default is current directory)", default=".")
+    parent_directory = Path(parent_input)
+    if not parent_directory.exists():
+        console.print(f"[red]Parent directory {parent_directory} does not exist.[/red]")
+        return
+    new_dir_name = Prompt.ask("Enter the name for the new directory")
+    new_directory = parent_directory / new_dir_name
+    if new_directory.exists():
+        console.print(f"[red]Directory {new_directory} already exists.[/red]")
+        return
+    new_directory.mkdir(parents=True, exist_ok=False)
+    console.print(f"[green]Directory {new_directory} created successfully.[/green]")
+
+def file_management_menu():
+    """File management submenu offering CRUD, move, directory creation and listing."""
+    base_directory = Path("notes")
+    base_directory.mkdir(exist_ok=True)
+    while True:
+        console.rule("[bold blue]File Management Menu[/bold blue]")
+        console.print("1. List files")
+        console.print("2. List directories")
+        console.print("3. View file content")
+        console.print("4. Create a new file")
+        console.print("5. Edit a file")
+        console.print("6. Delete a file")
+        console.print("7. Move file(s)")
+        console.print("8. Create a new directory")
+        console.print("9. Return to Main Menu")
+        choice = Prompt.ask("Enter your choice", choices=[str(i) for i in range(1,10)], default="9")
+        
+        if choice == "1":
+            list_files(base_directory)
+        elif choice == "2":
+            list_directories(base_directory)
+        elif choice == "3":
+            files = list_files(base_directory)
+            if files:
+                file = choose_file_from_list(files)
+                if file:
+                    view_file(file)
+        elif choice == "4":
+            create_file(base_directory)
+        elif choice == "5":
+            files = list_files(base_directory)
+            if files:
+                file = choose_file_from_list(files)
+                if file:
+                    edit_file(file)
+        elif choice == "6":
+            files = list_files(base_directory)
+            if files:
+                file = choose_file_from_list(files)
+                if file:
+                    delete_file(file)
+        elif choice == "7":
+            files = list_files(base_directory)
+            if files:
+                selected_files = choose_multiple_files_from_list(files)
+                if selected_files:
+                    target_dir_input = Prompt.ask("Enter target directory path", default=str(base_directory))
+                    target_directory = Path(target_dir_input)
+                    for f in selected_files:
+                        move_file(f, target_directory)
+        elif choice == "8":
+            create_directory()
+        elif choice == "9":
+            break
+        else:
+            console.print("[red]Invalid choice. Please try again.[/red]")
+
+# === New Search Feature ===
+
+def search_in_project(root_dir: Path, search_term: str):
+    """
+    Recursively search all files under 'root_dir' (excluding .py, .bat, and venv/),
+    and return a list of tuples: (file_path, line_number, line_content) for each match.
+    """
+    matches = []
+    search_term_lower = search_term.lower()
+    
+    for dirpath, dirnames, filenames in os.walk(root_dir):
+        # Skip any directory named 'venv'
+        if 'venv' in dirpath.split(os.sep):
+            continue
+        
+        for filename in filenames:
+            # Skip .py and .bat files
+            if filename.endswith('.py') or filename.endswith('.bat'):
+                continue
+
+            full_path = Path(dirpath) / filename
+            # Attempt reading the file as text; skip if unreadable (binary, etc.)
+            try:
+                with full_path.open('r', encoding='utf-8', errors='ignore') as f:
+                    for i, line in enumerate(f, start=1):
+                        if search_term_lower in line.lower():
+                            # Found a match
+                            matches.append((full_path, i, line.rstrip("\n")))
+            except Exception as e:
+                console.log(f"[red]Could not read file: {full_path}[/red], reason: {e}")
+                continue
+    
+    return matches
+
+def search_project_menu():
+    """
+    Prompt the user for a search term and then perform a recursive search of the project,
+    excluding .py, .bat files, and venv/ directory.
+    """
+    console.rule("[bold yellow]Search Project Files[/bold yellow]")
+    search_term = Prompt.ask("Enter the search term")
+    if not search_term.strip():
+        console.print("[red]Search term cannot be empty.[/red]")
+        return
+    
+    project_root = Path.cwd()  # or use Path(__file__).parent if you prefer
+    results = search_in_project(project_root, search_term)
+    
+    if not results:
+        console.print("[yellow]No matches found.[/yellow]")
+    else:
+        table = Table(title="Search Results")
+        table.add_column("File (click to open if supported)", style="magenta")
+        table.add_column("Line #", style="cyan", justify="right")
+        table.add_column("Matched Text", style="white")
+        
+        for file_path, line_num, line_content in results:
+            # Build file:// link
+            file_link = f"[link=file://{file_path.resolve()}]{file_path}[/link]"
+            
+            # Highlight the matched term in line_content (case-insensitive)
+            highlighted_line = Text(line_content)
+            highlighted_line.highlight_words([search_term], style="reverse red", case_sensitive=False)
+            
+            table.add_row(file_link, str(line_num), highlighted_line)
+        
+        console.print(table)
+
+# === Main Menu ===
+
+def main_menu():
+    """Display the main menu for the script."""
+    console.print("[bold green]Welcome to Note Nabber v2![/bold green]")
+    while True:
+        console.rule("[bold yellow]Main Menu[/bold yellow]")
+        console.print("1. Process input notes file")
+        console.print("2. File management (CRUD, Move, Directory Creation & Listing)")
+        console.print("3. Display Animated Moonwalk")
+        console.print("4. Display Moonwalk Across Screen")
+        console.print("5. Exit")
+        console.print("[cyan]6. Search Project Files[/cyan]")  # New option
+
+        choice = Prompt.ask("Enter your choice", choices=["1", "2", "3", "4", "5", "6"], default="5")
+        
+        if choice == "1":
+            process_notes_file()
+        elif choice == "2":
+            file_management_menu()
+        elif choice == "3":
+            animate_moonwalk_art()
+        elif choice == "4":
+            animate_moonwalk_across()
+        elif choice == "5":
+            console.print("[bold green]Goodbye![/bold green]")
+            break
+        elif choice == "6":
+            search_project_menu()
+        else:
+            console.print("[red]Invalid choice. Please try again.[/red]")
+
+if __name__ == "__main__":
+    main_menu()
