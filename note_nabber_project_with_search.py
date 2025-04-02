@@ -5,6 +5,7 @@ import re
 import shutil
 import time
 from pathlib import Path
+from collections import defaultdict
 
 from rich.console import Console
 from rich.table import Table
@@ -19,7 +20,7 @@ def natural_sort_key(s: str):
     Generate a natural sort key by splitting the string into text and number chunks.
     Example: "file10.txt" -> ['file', 10, '.txt']
     """
-    return [int(text) if text.isdigit() else text.lower() for text in re.split('(\d+)', s)]
+    return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
 
 # === Animated Moonwalk Functions ===
 
@@ -29,17 +30,17 @@ def animate_moonwalk_art():
     """
     frames = [
 r"""
-           _O/                 
-            /|                 
-             |                 
-            / \                
+           _O/
+            /|
+             |
+            / \
    ~ Michael Jackson Moonwalk ~
 """,
 r"""
-           \O_                
-            /|                 
-             |                 
-            / \                
+           \O_
+            /|
+             |
+            / \
    ~ Michael Jackson Moonwalk ~
 """
     ]
@@ -56,17 +57,17 @@ def animate_moonwalk_across():
     """
     frames = [
 r"""
-           _O/                 
-            /|                 
-             |                 
-            / \                
+           _O/
+            /|
+             |
+            / \
    ~ Michael Jackson Moonwalk ~
 """,
 r"""
-           \O_                
-            /|                 
-             |                 
-            / \                
+           \O_
+            /|
+             |
+            / \
    ~ Michael Jackson Moonwalk ~
 """
     ]
@@ -79,7 +80,7 @@ r"""
             live.update(Text(padded_frame, style="bold magenta"))
             time.sleep(0.1)
 
-# === Note Processing Functions ===
+# === Note Parsing / Writing Functions ===
 
 def parse_notes(file_path: Path):
     """
@@ -127,6 +128,8 @@ def write_note(note_name: str, note_content: str, notes_dir: Path, backup_dir: P
     
     console.log(f"[green]Note '{note_name}' saved successfully.[/green]")
     return note_file, backup_file
+
+# === Note Processing Workflow ===
 
 def choose_input_file() -> Path:
     """
@@ -183,6 +186,7 @@ def process_notes_file():
         console.print("[yellow]No notes found in the file.[/yellow]")
         return
     
+    # Display parsed notes
     table = Table(title="Parsed Notes")
     table.add_column("Note Name", style="cyan", no_wrap=True)
     table.add_column("Content Length", justify="right", style="magenta")
@@ -190,6 +194,7 @@ def process_notes_file():
         table.add_row(note_name, str(len(content)))
     console.print(table)
     
+    # Save?
     confirm = Prompt.ask("Do you want to save these notes? (y/n)", choices=["y", "n"], default="y")
     if confirm.lower() != "y":
         console.print("[red]Operation cancelled.[/red]")
@@ -199,7 +204,7 @@ def process_notes_file():
         write_note(note_name, content, output_dir, backup_dir)
     console.print("[bold green]All notes have been saved successfully![/bold green]")
 
-# === File Management Functions (CRUD, Move, Directory Creation, Directory Listing) ===
+# === File Management (CRUD, Move, Directory Creation, Directory Listing) ===
 
 def list_files(directory: Path):
     """List all files in a directory and display them in a table."""
@@ -411,14 +416,16 @@ def file_management_menu():
         else:
             console.print("[red]Invalid choice. Please try again.[/red]")
 
-# === New Search Feature ===
+# === NEW SEARCH FEATURE: Lines that Contain the Search Term + Backup Dedup ===
 
 def search_in_project(root_dir: Path, search_term: str):
     """
-    Recursively search all files under 'root_dir' (excluding .py, .bat, and venv/),
-    and return a list of tuples: (file_path, line_number, line_content) for each match.
+    Recursively search all files under 'root_dir' (excluding .py, .bat, and venv/).
+    Return a dict keyed by file_path -> list of lines (with highlights) that contain the search term.
+    
+    We'll do a line-by-line search (case-insensitive).
     """
-    matches = []
+    results = defaultdict(list)
     search_term_lower = search_term.lower()
     
     for dirpath, dirnames, filenames in os.walk(root_dir):
@@ -427,28 +434,68 @@ def search_in_project(root_dir: Path, search_term: str):
             continue
         
         for filename in filenames:
-            # Skip .py and .bat files
+            # Skip .py and .bat
             if filename.endswith('.py') or filename.endswith('.bat'):
                 continue
 
             full_path = Path(dirpath) / filename
-            # Attempt reading the file as text; skip if unreadable (binary, etc.)
+            
+            # Read file line by line
             try:
                 with full_path.open('r', encoding='utf-8', errors='ignore') as f:
-                    for i, line in enumerate(f, start=1):
+                    for line in f:
+                        # Check if search term is in this line (case-insensitive)
                         if search_term_lower in line.lower():
-                            # Found a match
-                            matches.append((full_path, i, line.rstrip("\n")))
+                            # Create a Rich Text for the line, highlight all matches
+                            line_text = Text(line.rstrip("\n"))
+                            line_text.highlight_words([search_term], style="reverse red", case_sensitive=False)
+                            
+                            results[full_path].append(line_text)
             except Exception as e:
                 console.log(f"[red]Could not read file: {full_path}[/red], reason: {e}")
                 continue
+
+    return results  # {Path: [Text(line_with_highlights), ...]}
+
+def filter_backup_duplicates(raw_results: dict[Path, list[Text]]):
+    """
+    raw_results is a dict: {file_path: [list of highlighted lines]}
     
-    return matches
+    For each filename, if there's a match outside 'backup' and also in 'backup',
+    keep only the non-backup results. Otherwise, keep the backup results.
+    """
+    # Group paths by filename
+    paths_by_filename = defaultdict(list)
+    for p in raw_results.keys():
+        paths_by_filename[p.name].append(p)
+
+    # We'll build a new dict of final results
+    final_results = {}
+    
+    for fname, paths in paths_by_filename.items():
+        # Check if any path for this fname is outside backup
+        has_non_backup = any("backup" not in path.parts for path in paths)
+        
+        if has_non_backup:
+            # Keep only those outside 'backup'
+            chosen_paths = [p for p in paths if "backup" not in p.parts]
+        else:
+            # Keep all in backup (since there's no outside-backup match)
+            chosen_paths = paths
+
+        # Add them to final_results
+        for cp in chosen_paths:
+            final_results[cp] = raw_results[cp]
+            
+    return final_results
 
 def search_project_menu():
     """
-    Prompt the user for a search term and then perform a recursive search of the project,
-    excluding .py, .bat files, and venv/ directory.
+    Prompt for a search term, do a line-based search, highlight matches,
+    filter out duplicates in backup. Then display lines containing the search term.
+    
+    We show one row per file. In that row, we only show lines that matched
+    (each line on a new line in the Rich text).
     """
     console.rule("[bold yellow]Search Project Files[/bold yellow]")
     search_term = Prompt.ask("Enter the search term")
@@ -456,30 +503,39 @@ def search_project_menu():
         console.print("[red]Search term cannot be empty.[/red]")
         return
     
-    project_root = Path.cwd()  # or use Path(__file__).parent if you prefer
-    results = search_in_project(project_root, search_term)
-    
-    if not results:
+    project_root = Path.cwd()  # or Path(__file__).parent if you prefer
+    raw_results = search_in_project(project_root, search_term)
+    if not raw_results:
         console.print("[yellow]No matches found.[/yellow]")
-    else:
-        table = Table(title="Search Results")
-        table.add_column("File (click to open if supported)", style="magenta")
-        table.add_column("Line #", style="cyan", justify="right")
-        table.add_column("Matched Text", style="white")
-        
-        for file_path, line_num, line_content in results:
-            # Build file:// link
-            file_link = f"[link=file://{file_path.resolve()}]{file_path}[/link]"
-            
-            # Highlight the matched term in line_content (case-insensitive)
-            highlighted_line = Text(line_content)
-            highlighted_line.highlight_words([search_term], style="reverse red", case_sensitive=False)
-            
-            table.add_row(file_link, str(line_num), highlighted_line)
-        
-        console.print(table)
+        return
+    
+    # Filter out backup duplicates
+    deduped_results = filter_backup_duplicates(raw_results)
+    if not deduped_results:
+        console.print("[yellow]No matches found (after backup filtering).[/yellow]")
+        return
 
-# === Main Menu ===
+    # Display results
+    table = Table(title="Search Results (Lines Containing Your Term)")
+    table.add_column("File (click to open if supported)", style="cyan", no_wrap=True)
+    table.add_column("Matching Lines", style="white")
+
+    for file_path, lines_list in sorted(deduped_results.items(), key=lambda x: natural_sort_key(str(x[0]))):
+        # Build file link
+        file_link = f"[link=file://{file_path.resolve()}]{file_path}[/link]"
+        
+        # Combine all matched lines into one Text object, each line on its own line
+        combined_text = Text()
+        for i, line_text in enumerate(lines_list):
+            if i > 0:
+                combined_text.append("\n")  # newline between lines
+            combined_text.append(line_text)
+        
+        table.add_row(file_link, combined_text)
+
+    console.print(table)
+
+# === MAIN MENU ===
 
 def main_menu():
     """Display the main menu for the script."""
@@ -491,7 +547,7 @@ def main_menu():
         console.print("3. Display Animated Moonwalk")
         console.print("4. Display Moonwalk Across Screen")
         console.print("5. Exit")
-        console.print("[cyan]6. Search Project Files[/cyan]")  # New option
+        console.print("[cyan]6. Search Project Files[/cyan]")
 
         choice = Prompt.ask("Enter your choice", choices=["1", "2", "3", "4", "5", "6"], default="5")
         
