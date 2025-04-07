@@ -133,13 +133,59 @@ def parse_notes(file_path: Path):
 def write_note(note_name: str, note_content: str, notes_dir: Path, backup_dir: Path):
     """
     Save a note's content to a file in both notes and backup directories.
+    If a file with the same name already exists, prompt the user whether to
+    append to the existing file or create a new one.
     """
+    # === PART 1: Handling the notes_dir file ===
     note_file = notes_dir / f"{note_name}.txt"
+    if note_file.exists():
+        console.print(f"[yellow]A file named '{note_file.name}' already exists in '{notes_dir}'.[/yellow]")
+        action = Prompt.ask(
+            f"Would you like to (a)ppend to '{note_file.name}' or create a (n)ew file?",
+            choices=["a", "n"],
+            default="a"
+        )
+        if action == "a":
+            # Append to existing file
+            existing_content = note_file.read_text(encoding="utf-8")
+            new_content = existing_content + "\n" + note_content
+            note_file.write_text(new_content, encoding="utf-8")
+        else:
+            # Create a new filename (prompt user for a new name)
+            new_filename = Prompt.ask(
+                "Enter a new filename (without .txt) for this note",
+                default=f"{note_name}_new"
+            )
+            note_file = notes_dir / f"{new_filename}.txt"
+            note_file.write_text(note_content, encoding="utf-8")
+            note_name = new_filename  # update note_name in case we need to refer to it
+    else:
+        # File doesn't exist, just create it
+        note_file.write_text(note_content, encoding="utf-8")
+
+    # === PART 2: Handling the backup_dir file ===
     backup_file = backup_dir / f"{note_name}.txt"
-    
-    note_file.write_text(note_content, encoding="utf-8")
-    backup_file.write_text(note_content, encoding="utf-8")
-    
+    if backup_file.exists():
+        console.print(f"[yellow]A file named '{backup_file.name}' already exists in '{backup_dir}'.[/yellow]")
+        action = Prompt.ask(
+            f"Would you like to (a)ppend to '{backup_file.name}' or create a (n)ew backup file?",
+            choices=["a", "n"],
+            default="a"
+        )
+        if action == "a":
+            existing_content = backup_file.read_text(encoding="utf-8")
+            new_content = existing_content + "\n" + note_content
+            backup_file.write_text(new_content, encoding="utf-8")
+        else:
+            new_backup_filename = Prompt.ask(
+                "Enter a new filename (without .txt) for this backup note",
+                default=f"{note_name}_backup_new"
+            )
+            backup_file = backup_dir / f"{new_backup_filename}.txt"
+            backup_file.write_text(note_content, encoding="utf-8")
+    else:
+        backup_file.write_text(note_content, encoding="utf-8")
+
     console.log(f"[green]Note '{note_name}' saved successfully.[/green]")
     return note_file, backup_file
 
@@ -281,7 +327,7 @@ def choose_file_from_list(files):
 def choose_multiple_files_from_list(files):
     """
     Prompt the user to choose multiple files from a list.
-    Enter comma-separated numbers (e.g., "1,3,5").
+    Enter comma-separated numbers (e.g., "1,3,5"). 
     Returns a list of selected files.
     """
     if not files:
@@ -517,7 +563,7 @@ def search_project_menu():
         console.print("[red]Search term cannot be empty.[/red]")
         return
     
-    project_root = Path.cwd()  # or Path(__file__).parent if you prefer
+    project_root = Path.cwd()
     raw_results = search_in_project(project_root, search_term)
     if not raw_results:
         console.print("[yellow]No matches found.[/yellow]")
