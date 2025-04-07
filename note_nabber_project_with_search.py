@@ -133,58 +133,67 @@ def parse_notes(file_path: Path):
 def write_note(note_name: str, note_content: str, notes_dir: Path, backup_dir: Path):
     """
     Save a note's content to a file in both notes and backup directories.
-    If a file with the same name already exists, prompt the user whether to
-    append to the existing file or create a new one.
+    If a file with the same name already exists in 'notes_dir', prompt once:
+      - Append to existing file
+      - Create a new file (new name)
+    Then automatically apply that same choice to the backup.
+    
+    If the main note file *doesn't* exist, we create it, and for the backup:
+      - If the backup doesn't exist => create it
+      - If the backup exists => append (no extra prompt)
     """
-    # === PART 1: Handling the notes_dir file ===
     note_file = notes_dir / f"{note_name}.txt"
+    backup_file = backup_dir / f"{note_name}.txt"
+
+    # --- Determine how to handle the note file in 'notes_dir' ---
     if note_file.exists():
-        console.print(f"[yellow]A file named '{note_file.name}' already exists in '{notes_dir}'.[/yellow]")
+        console.print(
+            f"[yellow]A file named '{note_file.name}' already exists in '{notes_dir}'.[/yellow]"
+        )
         action = Prompt.ask(
-            f"Would you like to (a)ppend to '{note_file.name}' or create a (n)ew file?",
+            "Would you like to (a)ppend to the existing file or create a (n)ew file name?",
             choices=["a", "n"],
             default="a"
         )
         if action == "a":
-            # Append to existing file
+            # Append to existing note file
             existing_content = note_file.read_text(encoding="utf-8")
             new_content = existing_content + "\n" + note_content
             note_file.write_text(new_content, encoding="utf-8")
+            # For backup: if backup_file exists, append; otherwise create
+            if backup_file.exists():
+                backup_existing = backup_file.read_text(encoding="utf-8")
+                new_backup_content = backup_existing + "\n" + note_content
+                backup_file.write_text(new_backup_content, encoding="utf-8")
+            else:
+                backup_file.write_text(note_content, encoding="utf-8")
         else:
-            # Create a new filename (prompt user for a new name)
+            # Create a new name for the note
             new_filename = Prompt.ask(
                 "Enter a new filename (without .txt) for this note",
                 default=f"{note_name}_new"
             )
-            note_file = notes_dir / f"{new_filename}.txt"
-            note_file.write_text(note_content, encoding="utf-8")
-            note_name = new_filename  # update note_name in case we need to refer to it
+            new_note_file = notes_dir / f"{new_filename}.txt"
+            new_note_file.write_text(note_content, encoding="utf-8")
+
+            # Do the same for the backup: new file with the same name
+            new_backup_file = backup_dir / f"{new_filename}.txt"
+            new_backup_file.write_text(note_content, encoding="utf-8")
+
+            # Update note_name to reflect the new filename
+            note_name = new_filename
+
     else:
-        # File doesn't exist, just create it
+        # If it doesn't exist in 'notes_dir', just create a new file
         note_file.write_text(note_content, encoding="utf-8")
 
-    # === PART 2: Handling the backup_dir file ===
-    backup_file = backup_dir / f"{note_name}.txt"
-    if backup_file.exists():
-        console.print(f"[yellow]A file named '{backup_file.name}' already exists in '{backup_dir}'.[/yellow]")
-        action = Prompt.ask(
-            f"Would you like to (a)ppend to '{backup_file.name}' or create a (n)ew backup file?",
-            choices=["a", "n"],
-            default="a"
-        )
-        if action == "a":
-            existing_content = backup_file.read_text(encoding="utf-8")
-            new_content = existing_content + "\n" + note_content
-            backup_file.write_text(new_content, encoding="utf-8")
+        # For the backup: if the backup file exists, append; otherwise create new
+        if backup_file.exists():
+            backup_existing = backup_file.read_text(encoding="utf-8")
+            new_backup_content = backup_existing + "\n" + note_content
+            backup_file.write_text(new_backup_content, encoding="utf-8")
         else:
-            new_backup_filename = Prompt.ask(
-                "Enter a new filename (without .txt) for this backup note",
-                default=f"{note_name}_backup_new"
-            )
-            backup_file = backup_dir / f"{new_backup_filename}.txt"
             backup_file.write_text(note_content, encoding="utf-8")
-    else:
-        backup_file.write_text(note_content, encoding="utf-8")
 
     console.log(f"[green]Note '{note_name}' saved successfully.[/green]")
     return note_file, backup_file
@@ -327,7 +336,7 @@ def choose_file_from_list(files):
 def choose_multiple_files_from_list(files):
     """
     Prompt the user to choose multiple files from a list.
-    Enter comma-separated numbers (e.g., "1,3,5"). 
+    Enter comma-separated numbers (e.g., "1,3,5").
     Returns a list of selected files.
     """
     if not files:
@@ -385,7 +394,11 @@ def delete_file(filepath: Path):
     if not filepath.exists():
         console.print(f"[red]File {filepath} does not exist.[/red]")
         return
-    confirm = Prompt.ask(f"Are you sure you want to delete {filepath.name}? (y/n)", choices=["y", "n"], default="n")
+    confirm = Prompt.ask(
+        f"Are you sure you want to delete {filepath.name}? (y/n)",
+        choices=["y", "n"],
+        default="n"
+    )
     if confirm.lower() == "y":
         filepath.unlink()
         console.print(f"[green]File {filepath.name} deleted successfully.[/green]")
@@ -509,7 +522,6 @@ def search_in_project(root_dir: Path, search_term: str):
                             # Create a Rich Text for the line, highlight all matches
                             line_text = Text(line.rstrip("\n"))
                             line_text.highlight_words([search_term], style="reverse red", case_sensitive=False)
-                            
                             results[full_path].append(line_text)
             except Exception as e:
                 console.log(f"[red]Could not read file: {full_path}[/red], reason: {e}")
@@ -524,26 +536,17 @@ def filter_backup_duplicates(raw_results: dict[Path, list[Text]]):
     For each filename, if there's a match outside 'backup' and also in 'backup',
     keep only the non-backup results. Otherwise, keep the backup results.
     """
-    # Group paths by filename
     paths_by_filename = defaultdict(list)
     for p in raw_results.keys():
         paths_by_filename[p.name].append(p)
 
-    # We'll build a new dict of final results
     final_results = {}
-    
     for fname, paths in paths_by_filename.items():
-        # Check if any path for this fname is outside backup
         has_non_backup = any("backup" not in path.parts for path in paths)
-        
         if has_non_backup:
-            # Keep only those outside 'backup'
             chosen_paths = [p for p in paths if "backup" not in p.parts]
         else:
-            # Keep all in backup (since there's no outside-backup match)
             chosen_paths = paths
-
-        # Add them to final_results
         for cp in chosen_paths:
             final_results[cp] = raw_results[cp]
             
@@ -553,9 +556,6 @@ def search_project_menu():
     """
     Prompt for a search term, do a line-based search, highlight matches,
     filter out duplicates in backup. Then display lines containing the search term.
-    
-    We show one row per file. In that row, we only show lines that matched
-    (each line on a new line in the Rich text).
     """
     console.rule("[bold yellow]Search Project Files[/bold yellow]")
     search_term = Prompt.ask("Enter the search term")
@@ -569,28 +569,22 @@ def search_project_menu():
         console.print("[yellow]No matches found.[/yellow]")
         return
     
-    # Filter out backup duplicates
     deduped_results = filter_backup_duplicates(raw_results)
     if not deduped_results:
         console.print("[yellow]No matches found (after backup filtering).[/yellow]")
         return
 
-    # Display results
     table = Table(title="Search Results (Lines Containing Your Term)")
     table.add_column("File (click to open if supported)", style="cyan", no_wrap=True)
     table.add_column("Matching Lines", style="white")
 
     for file_path, lines_list in sorted(deduped_results.items(), key=lambda x: natural_sort_key(str(x[0]))):
-        # Build file link
         file_link = f"[link=file://{file_path.resolve()}]{file_path}[/link]"
-        
-        # Combine all matched lines into one Text object, each line on its own line
         combined_text = Text()
         for i, line_text in enumerate(lines_list):
             if i > 0:
-                combined_text.append("\n")  # newline between lines
+                combined_text.append("\n")
             combined_text.append(line_text)
-        
         table.add_row(file_link, combined_text)
 
     console.print(table)
